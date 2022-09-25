@@ -6,5 +6,5 @@ fn main() {
     builder
         .define("UNICODE", "1")
         .file("src/source.cpp")
-        .compile("elevate");
+        .compile("auto_elevate");
 }
