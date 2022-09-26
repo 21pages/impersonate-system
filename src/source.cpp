@@ -16,31 +16,33 @@ static std::string wcharToString(wchar_t input[1024]) {
 	return convertedString;
 }
 
-static int64_t FindProcessPid(const char* appname) {
-	DWORD lpidProcess[PROCESS_ARRAY], lpcbNeeded;
-
-	EnumProcesses(lpidProcess, sizeof(lpidProcess), &lpcbNeeded);
-
-	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-
+extern "C" int64_t FindProcessPid(const char* exename, int verbose) {
 	PROCESSENTRY32 p32;
 	p32.dwSize = sizeof(PROCESSENTRY32);
 
-	int64_t processWinlogonPid;
-	std::string str_appname = std::string(appname);
+	int64_t processWinlogonPid = -1;
+	std::string str_exename = std::string(exename);
+
+	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if (hSnapshot == INVALID_HANDLE_VALUE) {
+		if (verbose) std::cout << "[!] Failed to create snapshot" << std::endl;
+		goto _exit;
+	}
 
 	if (Process32First(hSnapshot, &p32)) {
 		do {
-			if (wcharToString(p32.szExeFile) == str_appname) {
+			if (wcharToString(p32.szExeFile) == str_exename) {
 				processWinlogonPid = p32.th32ProcessID;
-				return processWinlogonPid;
+				break;
 			}
 		} while (Process32Next(hSnapshot, &p32));
-
-		CloseHandle(hSnapshot);
 	}
-	std::cout << "[!] Failed to find pid of " << str_appname << std::endl;
-	return -1;
+_exit:
+	if (verbose) std::cout << "[!] Failed to find pid of " << str_exename << std::endl;
+	if (hSnapshot != INVALID_HANDLE_VALUE)
+		CloseHandle(hSnapshot);
+
+	return processWinlogonPid;
 }
 
 static int EnableSeDebugPrivilegePrivilege() {
@@ -51,11 +53,10 @@ static int EnableSeDebugPrivilegePrivilege() {
 
 	if (currentProc) {
 		HANDLE TokenHandle(NULL);
-		BOOL hProcessToken = OpenProcessToken(
-			currentProc, TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &TokenHandle);
-		if (hProcessToken) {
-			BOOL checkToken = LookupPrivilegeValue(NULL, L"SeDebugPrivilege", &luid);
-			if (!checkToken) {
+		if (OpenProcessToken(
+			currentProc, TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &TokenHandle)) {
+			if (!LookupPrivilegeValue(NULL, L"SeDebugPrivilege", &luid)) {
+				// to-do: fail or already set
 				ret = 0;
 			}
 			else {
@@ -65,11 +66,9 @@ static int EnableSeDebugPrivilegePrivilege() {
 				tokenPrivs.Privileges[0].Luid = luid;
 				tokenPrivs.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 
-				BOOL adjustToken = AdjustTokenPrivileges(
+				if (AdjustTokenPrivileges(
 					TokenHandle, FALSE, &tokenPrivs, sizeof(TOKEN_PRIVILEGES),
-					(PTOKEN_PRIVILEGES)NULL, (PDWORD)NULL);
-
-				if (adjustToken != 0) {
+					(PTOKEN_PRIVILEGES)NULL, (PDWORD)NULL)) {
 					ret = 0;
 				}
 				else {
@@ -107,7 +106,7 @@ static int CreateImpersonatedProcess(HANDLE NewToken,
 	return 0;
 }
 
-static int StealToken(int TargetPID, LPCWSTR lpApplicationName, LPWSTR lpCommandLine) {
+static int StealToken(DWORD TargetPID, LPCWSTR lpApplicationName, LPWSTR lpCommandLine) {
 	HANDLE hProcess = NULL;
 	HANDLE TokenHandle = NULL;
 	HANDLE NewToken = NULL;
@@ -154,7 +153,7 @@ _exit:
 	return ret;
 }
 
-extern "C" int run_as_system_c(const char* exe, const char* arg) {
+extern "C" int RunAsSystem(const char* exe, const char* arg) {
 	wchar_t wexe[MAX_PATH], * lpApplicationName = NULL;
 	wchar_t warg[1024], * lpCommandLine = NULL;
 
@@ -167,10 +166,10 @@ extern "C" int run_as_system_c(const char* exe, const char* arg) {
 		lpCommandLine = (wchar_t*)warg;
 	}
 
-	int winLogonPID = FindProcessPid("winlogon.exe");
+	int64_t winLogonPID = FindProcessPid("winlogon.exe", 1);
 	if (winLogonPID < 0) return -1;
 
 	if (EnableSeDebugPrivilegePrivilege() != 0) return -1;
 
-	return StealToken(winLogonPID, lpApplicationName, lpCommandLine);
+	return StealToken((DWORD)winLogonPID, lpApplicationName, lpCommandLine);
 }
