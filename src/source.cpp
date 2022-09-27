@@ -7,8 +7,6 @@
 
 #pragma comment(lib, "advapi32.lib")
 
-#define PROCESS_ARRAY 2048
-
 static std::string wcharToString(wchar_t input[1024]) {
 	std::wstring wstringValue(input);
 	std::string convertedString(wstringValue.begin(), wstringValue.end());
@@ -38,7 +36,7 @@ extern "C" int64_t FindProcessPid(const char* exename, int verbose) {
 		} while (Process32Next(hSnapshot, &p32));
 	}
 _exit:
-	if (verbose) std::cout << "[!] Failed to find pid of " << str_exename << std::endl;
+	if (verbose && processWinlogonPid < 0) std::cout << "[!] Failed to find pid of " << str_exename << std::endl;
 	if (hSnapshot != INVALID_HANDLE_VALUE)
 		CloseHandle(hSnapshot);
 
