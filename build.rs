@@ -1,10 +1,9 @@
 use cc::Build;
 
 fn main() {
-    let mut builder = Build::new();
-
-    builder
+    println!("cargo:rustc-link-lib=advapi32");
+    Build::new()
         .define("UNICODE", "1")
         .file("src/source.cpp")
-        .compile("auto_elevate");
+        .compile("impersonate_system");
 }

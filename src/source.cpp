@@ -5,21 +5,12 @@
 #include <Tlhelp32.h>
 #include <sddl.h>
 
-#pragma comment(lib, "advapi32.lib")
 
-static std::string wcharToString(wchar_t input[1024]) {
-	std::wstring wstringValue(input);
-	std::string convertedString(wstringValue.begin(), wstringValue.end());
-
-	return convertedString;
-}
-
-extern "C" int64_t FindProcessPid(const char* exename, int verbose) {
+extern "C" int64_t FindProcessPid(LPCWSTR exename, int verbose) {
 	PROCESSENTRY32 p32;
 	p32.dwSize = sizeof(PROCESSENTRY32);
 
 	int64_t processWinlogonPid = -1;
-	std::string str_exename = std::string(exename);
 
 	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
 	if (hSnapshot == INVALID_HANDLE_VALUE) {
@@ -29,14 +20,14 @@ extern "C" int64_t FindProcessPid(const char* exename, int verbose) {
 
 	if (Process32First(hSnapshot, &p32)) {
 		do {
-			if (wcharToString(p32.szExeFile) == str_exename) {
+			if (wcscmp(p32.szExeFile, exename) == 0) {
 				processWinlogonPid = p32.th32ProcessID;
 				break;
 			}
 		} while (Process32Next(hSnapshot, &p32));
 	}
 _exit:
-	if (verbose && processWinlogonPid < 0) std::cout << "[!] Failed to find pid of " << str_exename << std::endl;
+	if (verbose && processWinlogonPid < 0) std::cout << "[!] Failed to find pid of " << exename << std::endl;
 	if (hSnapshot != INVALID_HANDLE_VALUE)
 		CloseHandle(hSnapshot);
 
@@ -151,20 +142,8 @@ _exit:
 	return ret;
 }
 
-extern "C" int RunAsSystem(const char* exe, const char* arg) {
-	wchar_t wexe[MAX_PATH], * lpApplicationName = NULL;
-	wchar_t warg[1024], * lpCommandLine = NULL;
-
-	if (exe && strlen(exe) > 0) {
-		std::mbstowcs(wexe, exe, strlen(exe) + 1);
-		lpApplicationName = (wchar_t*)wexe;
-	}
-	if (arg && strlen(arg) > 0) {
-		std::mbstowcs(warg, arg, strlen(arg) + 1);
-		lpCommandLine = (wchar_t*)warg;
-	}
-
-	int64_t winLogonPID = FindProcessPid("winlogon.exe", 1);
+extern "C" int RunAsSystem(LPCWSTR lpApplicationName, LPWSTR lpCommandLine) {
+	int64_t winLogonPID = FindProcessPid(L"winlogon.exe", 1);
 	if (winLogonPID < 0) return -1;
 
 	if (EnableSeDebugPrivilegePrivilege() != 0) return -1;
