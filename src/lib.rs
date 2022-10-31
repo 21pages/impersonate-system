@@ -2,29 +2,22 @@ use std::os::raw::{c_int, c_void};
 use std::os::windows::ffi::OsStrExt;
 
 extern "C" {
-    fn RunAsSystem(exe: *const c_void, cmd: *const c_void) -> c_int;
+    fn RunAsSystem(exe: *const c_void, cmd: *mut c_void) -> c_int;
     fn FindProcessPid(exe: *const c_void, verbose: c_int) -> i64;
 }
 
-// sometimes cmd should start with space, sometimes should not.
-pub fn run_as_system(exe: &str, cmd: &str) -> Result<(), ()> {
-    let wexe;
-    let wcmd;
+pub fn run_as_system(exe: &str, arg: &str) -> Result<(), ()> {
+    // https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createprocesswithtokenw
+    assert!(!exe.is_empty());
+    let cmd = if exe.starts_with("\"") {
+        format!("{} {}", exe, arg)
+    } else {
+        format!("\"{}\" {}", exe, arg)
+    };
+    let mut wcmd = wstring(&cmd);
     unsafe {
-        let cexe = if exe.is_empty() {
-            std::ptr::null() as *const c_void
-        } else {
-            wexe = wstring(exe);
-            wexe.as_ptr() as *const c_void
-        };
-
-        let ccmd = if cmd.is_empty() {
-            std::ptr::null() as *const c_void
-        } else {
-            wcmd = wstring(cmd);
-            wcmd.as_ptr() as *const c_void
-        };
-        if 0 == RunAsSystem(cexe, ccmd) {
+        let ccmd = wcmd.as_mut_ptr() as _;
+        if 0 == RunAsSystem(std::ptr::null(), ccmd) {
             Ok(())
         } else {
             Err(())
