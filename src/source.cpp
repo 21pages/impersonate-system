@@ -44,9 +44,9 @@ static int EnableSeDebugPrivilegePrivilege() {
 		HANDLE TokenHandle(NULL);
 		if (OpenProcessToken(
 			currentProc, TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &TokenHandle)) {
+			// https://learn.microsoft.com/en-us/windows/win32/secauthz/enabling-and-disabling-privileges-in-c--
 			if (!LookupPrivilegeValue(NULL, L"SeDebugPrivilege", &luid)) {
-				// to-do: fail or already set
-				ret = 0;
+				std::cout << "[!] Failed to lookup privilege on local system" << std::endl;
 			}
 			else {
 				TOKEN_PRIVILEGES tokenPrivs;
@@ -61,8 +61,14 @@ static int EnableSeDebugPrivilegePrivilege() {
 					ret = 0;
 				}
 				else {
-					std::cout << "[!] Failed to added SeDebugPrivilege to the current process token" << std::endl;
+					std::cout << "[!] Failed to add SeDebugPrivilege to the current process token" << std::endl;
 				}
+
+				if (GetLastError() == ERROR_NOT_ALL_ASSIGNED) {
+					std::cout << "[!] The token does not have the specified privilege."  << std::endl;;
+					ret = -1;
+				} 
+
 			}
 			CloseHandle(TokenHandle);
 		}
